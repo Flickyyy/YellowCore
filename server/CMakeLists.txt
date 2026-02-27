@@ -1,15 +1,9 @@
-set(SERVER_SOURCES
-    src/main.cpp
-    src/server.cpp
-    src/account.cpp
-    src/user_manager.cpp
-    src/transaction.cpp
+add_library(yellowcore_server_lib
+    src/auth_service.cpp
+    src/bank_service.cpp
+    src/stock_service.cpp
+    src/price_engine.cpp
 )
+target_include_directories(yellowcore_server_lib PUBLIC src)
 
-add_executable(yellowcore_server ${SERVER_SOURCES})
-
-# Dependencies (когда добавим)
-# target_link_libraries(yellowcore_server pthread)
-
-# Tests
 add_subdirectory(tests)

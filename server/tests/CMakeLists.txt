@@ -1,9 +1,10 @@
+find_package(Threads REQUIRED)
+
 add_executable(server_tests
-    transaction_tests.cpp
-    account_tests.cpp
+    auth_tests.cpp
+    bank_tests.cpp
+    stock_tests.cpp
+    concurrent_tests.cpp
 )
-
-# Когда добавим GoogleTest / Boost.Test
-# target_link_libraries(server_tests gtest gtest_main)
-
+target_link_libraries(server_tests yellowcore_server_lib gtest gtest_main Threads::Threads)
 add_test(NAME ServerTests COMMAND server_tests)
