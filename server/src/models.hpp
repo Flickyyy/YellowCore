@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <chrono>
 #include <optional>
+#include <vector>
 
 enum class Currency { RUB, USD, EUR };
 enum class OpType { Deposit, Withdraw, TransferIn, TransferOut, BuyStock, SellStock };
@@ -51,13 +52,6 @@ struct User {
     std::string password_hash;
 };
 
-struct Account {
-    uint64_t id = 0;
-    uint64_t user_id = 0;
-    Currency currency = Currency::RUB;
-    double balance = 0.0;
-};
-
 using TimePoint = std::chrono::system_clock::time_point;
 
 struct HistoryEntry {
@@ -66,6 +60,14 @@ struct HistoryEntry {
     double amount;
     double balance_after;
     std::string counterparty;
+};
+
+struct Account {
+    uint64_t id = 0;
+    uint64_t user_id = 0;
+    Currency currency = Currency::RUB;
+    double balance = 0.0;
+    std::vector<HistoryEntry> history;
 };
 
 struct Position {

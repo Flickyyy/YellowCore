@@ -107,3 +107,58 @@ TEST(Concurrent, ParallelSellsLimited) {
     EXPECT_EQ(ok.load(), 10);
     EXPECT_TRUE(stocks.get_portfolio(1).empty());
 }
+
+// --- Tests that verify per-user parallelism (separate users don't block each other) ---
+
+TEST(Concurrent, DepositsSeparateUsers) {
+    BankService bank;
+    auto acc1 = bank.create_account(1, Currency::RUB);
+    auto acc2 = bank.create_account(2, Currency::RUB);
+    std::vector<std::thread> threads;
+    for (int i = 0; i < 100; i++) {
+        threads.emplace_back([&] { bank.deposit(1, acc1, 10.0); });
+        threads.emplace_back([&] { bank.deposit(2, acc2, 10.0); });
+    }
+    for (auto& t : threads) t.join();
+    EXPECT_DOUBLE_EQ(bank.get_account(acc1)->balance, 1000.0);
+    EXPECT_DOUBLE_EQ(bank.get_account(acc2)->balance, 1000.0);
+}
+
+TEST(Concurrent, CrossUserTransfer) {
+    BankService bank;
+    auto a = bank.create_account(1, Currency::RUB);
+    auto b = bank.create_account(2, Currency::RUB);
+    bank.deposit(1, a, 5000);
+    bank.deposit(2, b, 5000);
+    std::vector<std::thread> threads;
+    for (int i = 0; i < 100; i++) {
+        threads.emplace_back([&] { bank.transfer(1, a, b, 10.0); });
+        threads.emplace_back([&] { bank.transfer(2, b, a, 10.0); });
+    }
+    for (auto& t : threads) t.join();
+    double total = bank.get_account(a)->balance + bank.get_account(b)->balance;
+    EXPECT_DOUBLE_EQ(total, 10000.0);
+}
+
+TEST(Concurrent, ValidateWhileRegistering) {
+    AuthService auth;
+    auth.register_user("alice", "pass");
+    auto token = *auth.login("alice", "pass");
+
+    std::atomic<int> validations{0};
+    std::vector<std::thread> threads;
+    for (int i = 0; i < 10; i++) {
+        threads.emplace_back([&] {
+            for (int j = 0; j < 100; j++) {
+                if (auth.validate(token)) validations++;
+            }
+        });
+    }
+    for (int i = 0; i < 50; i++) {
+        threads.emplace_back([&, i] {
+            auth.register_user("user" + std::to_string(i), "pass");
+        });
+    }
+    for (auto& t : threads) t.join();
+    EXPECT_EQ(validations.load(), 1000);
+}
