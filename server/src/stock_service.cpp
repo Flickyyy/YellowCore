@@ -3,24 +3,6 @@
 StockService::StockService(IBankService& bank, PriceEngine& prices)
     : bank_(bank), prices_(prices) {}
 
-std::shared_ptr<UserPortfolio> StockService::find_or_create(uint64_t user_id) {
-    {
-        std::shared_lock lk(map_mu_);
-        auto it = users_.find(user_id);
-        if (it != users_.end()) return it->second;
-    }
-    std::unique_lock lk(map_mu_);
-    auto& ptr = users_[user_id];
-    if (!ptr) ptr = std::make_shared<UserPortfolio>();
-    return ptr;
-}
-
-std::shared_ptr<UserPortfolio> StockService::find_user(uint64_t user_id) const {
-    std::shared_lock lk(map_mu_);
-    auto it = users_.find(user_id);
-    return it != users_.end() ? it->second : nullptr;
-}
-
 std::optional<BuyResult> StockService::buy(
     uint64_t user_id, const std::string& ticker, int quantity, uint64_t account_id) {
     if (quantity <= 0) return std::nullopt;
@@ -37,7 +19,7 @@ std::optional<BuyResult> StockService::buy(
     auto new_balance = bank_.debit_for_stock(user_id, account_id, cost_local, ticker);
     if (!new_balance) return std::nullopt;
 
-    auto up = find_or_create(user_id);
+    auto up = users_.get_or_create(user_id, [] { return std::make_shared<UserPortfolio>(); });
     {
         std::unique_lock lk(up->mu);
         auto& pos = up->positions[ticker];
@@ -58,9 +40,10 @@ std::optional<SellResult> StockService::sell(
     double price = prices_.get_quote(ticker);
     if (price <= 0) return std::nullopt;
 
-    // Reserve shares (per-user lock)
-    auto up = find_user(user_id);
-    if (!up) return std::nullopt;
+    // Reserve shares (per-user lock via stripe lookup)
+    auto up_opt = users_.get(user_id);
+    if (!up_opt) return std::nullopt;
+    auto& up = *up_opt;
     {
         std::unique_lock lk(up->mu);
         auto pit = up->positions.find(ticker);
@@ -99,8 +82,9 @@ std::optional<SellResult> StockService::sell(
 }
 
 std::vector<Position> StockService::get_portfolio(uint64_t user_id) const {
-    auto up = find_user(user_id);
-    if (!up) return {};
+    auto up_opt = users_.get(user_id);
+    if (!up_opt) return {};
+    auto& up = *up_opt;
     std::shared_lock lk(up->mu);
     std::vector<Position> result;
     for (auto& [_, pos] : up->positions)
@@ -109,8 +93,9 @@ std::vector<Position> StockService::get_portfolio(uint64_t user_id) const {
 }
 
 std::vector<Trade> StockService::get_trades(uint64_t user_id) const {
-    auto up = find_user(user_id);
-    if (!up) return {};
+    auto up_opt = users_.get(user_id);
+    if (!up_opt) return {};
+    auto& up = *up_opt;
     std::shared_lock lk(up->mu);
     return up->trades;
 }

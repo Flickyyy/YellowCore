@@ -2,7 +2,7 @@
 #include "models.hpp"
 #include "bank_service.hpp"
 #include "price_engine.hpp"
-#include <unordered_map>
+#include "concurrent_map.hpp"
 #include <vector>
 #include <shared_mutex>
 #include <optional>
@@ -42,12 +42,7 @@ public:
     std::vector<Trade>    get_trades(uint64_t user_id) const override;
 
 private:
-    std::shared_ptr<UserPortfolio> find_or_create(uint64_t user_id);
-    std::shared_ptr<UserPortfolio> find_user(uint64_t user_id) const;
-
     IBankService& bank_;
     PriceEngine& prices_;
-
-    mutable std::shared_mutex map_mu_;
-    std::unordered_map<uint64_t, std::shared_ptr<UserPortfolio>> users_;
+    ConcurrentMap<uint64_t, std::shared_ptr<UserPortfolio>> users_;
 };

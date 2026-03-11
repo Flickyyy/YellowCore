@@ -1,7 +1,6 @@
 #pragma once
 #include "models.hpp"
-#include <unordered_map>
-#include <shared_mutex>
+#include "concurrent_map.hpp"
 #include <optional>
 #include <atomic>
 
@@ -25,9 +24,7 @@ private:
     static std::string hash(const std::string& s);
     static std::string gen_token();
 
-    mutable std::shared_mutex users_mu_;
-    mutable std::shared_mutex tokens_mu_;
-    std::unordered_map<std::string, User> users_;
-    std::unordered_map<std::string, uint64_t> tokens_;
+    ConcurrentMap<std::string, User> users_;
+    ConcurrentMap<std::string, uint64_t> tokens_;
     std::atomic<uint64_t> next_id_{1};
 };

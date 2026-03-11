@@ -1,5 +1,4 @@
 #include "auth_service.hpp"
-#include <mutex>
 #include <random>
 #include <sstream>
 #include <iomanip>
@@ -22,38 +21,24 @@ std::string AuthService::gen_token() {
 }
 
 std::optional<uint64_t> AuthService::register_user(const std::string& username, const std::string& password) {
-    std::unique_lock lock(users_mu_);
-    if (users_.count(username)) return std::nullopt;
     User u{next_id_++, username, hash(password)};
-    users_[username] = u;
+    if (!users_.try_insert(username, u)) return std::nullopt;
     return u.id;
 }
 
 std::optional<std::string> AuthService::login(const std::string& username, const std::string& password) {
-    uint64_t user_id;
-    {
-        std::shared_lock lock(users_mu_);
-        auto it = users_.find(username);
-        if (it == users_.end() || it->second.password_hash != hash(password))
-            return std::nullopt;
-        user_id = it->second.id;
-    }
+    auto user = users_.get(username);
+    if (!user || user->password_hash != hash(password))
+        return std::nullopt;
     auto token = gen_token();
-    {
-        std::unique_lock lock(tokens_mu_);
-        tokens_[token] = user_id;
-    }
+    tokens_.put(token, user->id);
     return token;
 }
 
 bool AuthService::logout(const std::string& token) {
-    std::unique_lock lock(tokens_mu_);
-    return tokens_.erase(token) > 0;
+    return tokens_.erase(token);
 }
 
 std::optional<uint64_t> AuthService::validate(const std::string& token) const {
-    std::shared_lock lock(tokens_mu_);
-    auto it = tokens_.find(token);
-    if (it == tokens_.end()) return std::nullopt;
-    return it->second;
+    return tokens_.get(token);
 }
