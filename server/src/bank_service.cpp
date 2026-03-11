@@ -8,8 +8,6 @@ void BankService::record(Account& acc, OpType type, double amount, const std::st
     });
 }
 
-// --- structural ops (stripe-level locks only) ---
-
 uint64_t BankService::create_account(uint64_t user_id, Currency currency) {
     uint64_t id = next_id_++;
     auto ud = users_.get_or_create(user_id, [] { return std::make_shared<UserAccounts>(); });
@@ -33,8 +31,6 @@ bool BankService::close_account(uint64_t user_id, uint64_t account_id) {
     account_index_.erase(account_id);
     return true;
 }
-
-// --- read ops (stripe-level shared → per-user shared) ---
 
 std::vector<Account> BankService::get_accounts(uint64_t user_id) const {
     auto ud_opt = users_.get(user_id);
@@ -70,8 +66,6 @@ std::vector<HistoryEntry> BankService::get_history(uint64_t account_id) const {
     if (it == ud->accounts.end()) return {};
     return it->second.history;
 }
-
-// --- write ops (stripe-level shared → per-user unique) ---
 
 std::optional<double> BankService::deposit(uint64_t user_id, uint64_t account_id, double amount) {
     if (amount <= 0) return std::nullopt;

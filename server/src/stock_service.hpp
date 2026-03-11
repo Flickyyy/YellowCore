@@ -22,7 +22,6 @@ public:
     virtual std::vector<Trade>    get_trades(uint64_t user_id) const = 0;
 };
 
-// Per-user portfolio data with its own read-write lock
 struct UserPortfolio {
     mutable std::shared_mutex mu;
     std::unordered_map<std::string, Position> positions;

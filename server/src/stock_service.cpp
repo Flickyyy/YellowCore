@@ -40,7 +40,6 @@ std::optional<SellResult> StockService::sell(
     double price = prices_.get_quote(ticker);
     if (price <= 0) return std::nullopt;
 
-    // Reserve shares (per-user lock via stripe lookup)
     auto up_opt = users_.get(user_id);
     if (!up_opt) return std::nullopt;
     auto& up = *up_opt;

@@ -34,7 +34,6 @@ public:
     virtual std::vector<HistoryEntry> get_history(uint64_t account_id) const = 0;
 };
 
-// Per-user account data with its own read-write lock
 struct UserAccounts {
     mutable std::shared_mutex mu;
     std::unordered_map<uint64_t, Account> accounts;

@@ -4,8 +4,7 @@
 #include <iomanip>
 #include <functional>
 
-// TODO: заменить на SHA-256 (OpenSSL / Boost) при переходе в продакшн.
-// std::hash достаточен для демонстрации и прохождения тестов.
+// TODO: заменить на SHA-256 или лучше, с солью
 std::string AuthService::hash(const std::string& s) {
     auto h = std::hash<std::string>{}(s);
     std::ostringstream oss;
