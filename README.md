@@ -102,3 +102,73 @@
 - **Клиент**: unit-тесты (Qt Test) для критических компонентов
 - **Общее**: стресс-тесты (одновременные операции от нескольких клиентов)
 - покрытие кода тестами — не менее 70%
+
+---
+
+## Быстрый запуск (Этап 2: TCP API)
+
+Сервер поднимает JSON-over-TCP протокол с фреймингом:
+- 4 байта длины (big-endian)
+- JSON payload
+
+### Зависимости
+
+- CMake >= 3.20
+- C++17 компилятор
+- Boost (модуль `system` + заголовки Asio)
+
+Пример для Fedora:
+
+```bash
+sudo dnf install boost-devel
+```
+
+Пример для Ubuntu/Debian:
+
+```bash
+sudo apt-get install libboost-all-dev
+```
+
+### Сборка
+
+```bash
+cmake -S . -B build
+cmake --build build -j
+```
+
+### Запуск сервера
+
+```bash
+./build/server/yellowcore_server 0.0.0.0 9090 4
+```
+
+Параметры:
+- `host` (по умолчанию `0.0.0.0`)
+- `port` (по умолчанию `9090`)
+- `threads` (по умолчанию `4`)
+
+### Демонстрационный сценарий для защиты
+
+В отдельном терминале:
+
+```bash
+python3 scripts/demo_tcp.py 127.0.0.1 9090
+```
+
+Скрипт выполняет цепочку:
+- register
+- login
+- create_account (RUB, USD)
+- deposit
+- transfer
+- get_accounts
+- logout
+
+### Как кратко объяснить архитектуру на защите
+
+1. Бизнес-логика не трогалась: `AuthService`, `BankService`, `StockService`, `PriceEngine` работают как раньше.
+2. Сверху добавлен транспортный слой на Boost.Asio:
+	- `TcpServer` принимает подключения
+	- `TcpSession` читает/пишет framed JSON
+	- `CommandDispatcher` маппит `type` запроса на вызов сервиса
+3. Протокол строгий: `4-byte length + JSON`, поэтому для demo используется TCP-скрипт, а не `curl`.
