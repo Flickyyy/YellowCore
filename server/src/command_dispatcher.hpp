@@ -20,6 +20,7 @@ private:
 
     nlohmann::json handle_create_account(const nlohmann::json& request) const;
     nlohmann::json handle_get_accounts(const nlohmann::json& request) const;
+    nlohmann::json handle_close_account(const nlohmann::json& request) const;
     nlohmann::json handle_deposit(const nlohmann::json& request) const;
     nlohmann::json handle_withdraw(const nlohmann::json& request) const;
     nlohmann::json handle_transfer(const nlohmann::json& request) const;
@@ -27,6 +28,10 @@ private:
 
     nlohmann::json handle_get_quotes(const nlohmann::json& request) const;
     nlohmann::json handle_get_exchange_rates(const nlohmann::json& request) const;
+    nlohmann::json handle_buy_stock(const nlohmann::json& request) const;
+    nlohmann::json handle_sell_stock(const nlohmann::json& request) const;
+    nlohmann::json handle_get_portfolio(const nlohmann::json& request) const;
+    nlohmann::json handle_get_trades(const nlohmann::json& request) const;
 
     nlohmann::json unauthorized() const;
     nlohmann::json error_response(const std::string& message) const;
@@ -35,6 +40,6 @@ private:
 
     IAuthService& auth_;
     IBankService& bank_;
-    [[maybe_unused]] IStockService& stock_;
+    IStockService& stock_;
     PriceEngine& prices_;
 };

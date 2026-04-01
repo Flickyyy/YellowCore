@@ -17,6 +17,7 @@ public:
               const CommandDispatcher& dispatcher);
 
     boost::asio::io_context& io_context() { return io_context_; }
+    unsigned short port() const { return acceptor_.local_endpoint().port(); }
 
     void run();
     void stop();
