@@ -603,8 +603,8 @@ TEST_F(NetworkFixture, PriceEngineChangesQuotesOverTime) {
     ASSERT_FALSE(baseline.empty());
 
     bool changed = false;
-    for (int attempt = 0; attempt < 4 && !changed; ++attempt) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(2200));
+    for (int attempt = 0; attempt < 10 && !changed; ++attempt) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(120));
         auto qn = client.request({
             {"type", "get_quotes"},
             {"token", token}

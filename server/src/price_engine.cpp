@@ -51,7 +51,7 @@ void PriceEngine::run() {
     while (running_) {
         {
             std::unique_lock lock(cv_mu_);
-            cv_.wait_for(lock, std::chrono::seconds(2), [this] { return !running_.load(); });
+            cv_.wait_for(lock, std::chrono::milliseconds(100), [this] { return !running_.load(); });
         }
         if (!running_) break;
 
