@@ -9,7 +9,11 @@
 #include <QMessageBox>
 #include <QDateTime>
 #include <QFont>
+#include <QFrame>
+#include <QShortcut>
+#include <QKeySequence>
 #include <QtMath>
+#include <algorithm>
 
 // ─── constructor ─────────────────────────────────────────────────────────────
 
@@ -20,22 +24,83 @@ MainWindow::MainWindow(TcpClient* client,
     : QMainWindow(parent), m_client(client), m_token(token), m_username(username)
 {
     setWindowTitle(QString("YellowCore — %1").arg(username));
-    resize(960, 680);
+    resize(1180, 820);
+    setMinimumSize(1000, 700);
 
     auto* central = new QWidget;
     auto* vbox = new QVBoxLayout(central);
     vbox->setContentsMargins(8, 8, 8, 0);
     vbox->setSpacing(6);
 
-    // Header row
-    auto* hdr = new QHBoxLayout;
-    auto* userLbl = new QLabel(QString("Logged in as  <b>%1</b>").arg(username));
-    auto* logoutBtn = new QPushButton("Logout");
-    logoutBtn->setFixedWidth(80);
-    hdr->addWidget(userLbl);
-    hdr->addStretch();
-    hdr->addWidget(logoutBtn);
-    vbox->addLayout(hdr);
+    // Stats header — eye-candy bar with live totals
+    auto* statsBar = new QFrame;
+    statsBar->setObjectName("statsBar");
+    statsBar->setStyleSheet(
+        "QFrame#statsBar{"
+        "  background:qlineargradient(x1:0,y1:0,x2:1,y2:0,"
+        "    stop:0 #2c3e50, stop:1 #34495e);"
+        "  border-radius:8px;"
+        "  padding:10px 14px;"
+        "}"
+        "QFrame#statsBar QLabel{color:#ecf0f1;}"
+        "QLabel#statsTitle{font-weight:600;font-size:11pt;color:#bdc3c7;}"
+        "QLabel#statsValue{font-weight:700;font-size:14pt;color:#ffffff;}"
+        "QLabel#statsValuePos{font-weight:700;font-size:14pt;color:#2ecc71;}"
+        "QLabel#statsValueNeg{font-weight:700;font-size:14pt;color:#e74c3c;}");
+    auto* statsLayout = new QHBoxLayout(statsBar);
+    statsLayout->setContentsMargins(14, 10, 14, 10);
+
+    auto makeStatColumn = [](const QString& title, QLabel*& valueRef,
+                             const QString& objectName = "statsValue") {
+        auto* col = new QVBoxLayout;
+        col->setSpacing(2);
+        auto* t = new QLabel(title);
+        t->setObjectName("statsTitle");
+        valueRef = new QLabel("—");
+        valueRef->setObjectName(objectName);
+        col->addWidget(t);
+        col->addWidget(valueRef);
+        auto* w = new QWidget;
+        w->setLayout(col);
+        return w;
+    };
+
+    auto* userCol = new QVBoxLayout;
+    userCol->setSpacing(2);
+    auto* userTitle = new QLabel("USER");
+    userTitle->setObjectName("statsTitle");
+    auto* userVal = new QLabel(username);
+    userVal->setObjectName("statsValue");
+    userCol->addWidget(userTitle);
+    userCol->addWidget(userVal);
+    auto* userColW = new QWidget;
+    userColW->setLayout(userCol);
+
+    auto* sep1 = new QFrame; sep1->setFrameShape(QFrame::VLine);
+    sep1->setStyleSheet("color:#7f8c8d;");
+    auto* sep2 = new QFrame; sep2->setFrameShape(QFrame::VLine);
+    sep2->setStyleSheet("color:#7f8c8d;");
+    auto* sep3 = new QFrame; sep3->setFrameShape(QFrame::VLine);
+    sep3->setStyleSheet("color:#7f8c8d;");
+
+    statsLayout->addWidget(userColW);
+    statsLayout->addWidget(sep1);
+    statsLayout->addWidget(makeStatColumn("CASH BALANCES", m_statsCash));
+    statsLayout->addWidget(sep2);
+    statsLayout->addWidget(makeStatColumn("PORTFOLIO VALUE", m_statsPortfolio));
+    statsLayout->addWidget(sep3);
+    statsLayout->addWidget(makeStatColumn("UNREALIZED P&L", m_statsPnL));
+    statsLayout->addStretch();
+
+    auto* logoutBtn = new QPushButton("⏻  Logout");
+    logoutBtn->setFixedWidth(110);
+    logoutBtn->setStyleSheet(
+        "QPushButton{background:#e74c3c;border:none;color:white;"
+        "font-weight:600;border-radius:4px;padding:8px 12px;}"
+        "QPushButton:hover{background:#c0392b;}");
+    statsLayout->addWidget(logoutBtn);
+
+    vbox->addWidget(statsBar);
 
     auto* tabs = new QTabWidget;
     tabs->addTab(buildAccountsTab(), "Accounts");
@@ -54,7 +119,14 @@ MainWindow::MainWindow(TcpClient* client,
     connect(tabs,      &QTabWidget::currentChanged,  this, &MainWindow::onTabChanged);
 
     refreshAccounts();
-    // Timer is only running while the Market tab is active; see onTabChanged.
+    refreshExchangeRates();
+    // Timer auto-runs only while Market or Portfolio tab is visible; see onTabChanged.
+
+    // F5 — refresh whichever tab is active.
+    auto* refreshShortcut = new QShortcut(QKeySequence(Qt::Key_F5), this);
+    connect(refreshShortcut, &QShortcut::activated, this, [this]() {
+        onTabChanged(m_currentTab);
+    });
 }
 
 // ─── tab builders ────────────────────────────────────────────────────────────
@@ -67,6 +139,8 @@ static QTableWidget* makeTable(const QStringList& headers) {
     t->setSelectionBehavior(QAbstractItemView::SelectRows);
     t->setAlternatingRowColors(true);
     t->verticalHeader()->setVisible(false);
+    t->setSortingEnabled(true);
+    t->horizontalHeader()->setSectionsClickable(true);
     return t;
 }
 
@@ -77,11 +151,9 @@ QWidget* MainWindow::buildAccountsTab() {
 
     m_accountsTable = makeTable({"Account ID", "Currency", "Balance"});
 
-    auto* topRow = new QHBoxLayout;
     auto* refreshBtn = new QPushButton("Refresh");
     refreshBtn->setFixedWidth(80);
     connect(refreshBtn, &QPushButton::clicked, this, &MainWindow::refreshAccounts);
-    topRow->addWidget(m_accountsTable);
 
     // Create account
     auto* createBox = new QGroupBox("New Account");
@@ -119,15 +191,21 @@ QWidget* MainWindow::buildAccountsTab() {
     m_transferAmt->setDecimals(2);
     m_transferAmt->setValue(100.0);
 
-    auto* depBtn  = new QPushButton("Deposit");
-    auto* wdBtn   = new QPushButton("Withdraw");
-    auto* xfrBtn  = new QPushButton("Transfer");
+    auto* depBtn   = new QPushButton("Deposit");
+    auto* wdBtn    = new QPushButton("Withdraw");
+    auto* xfrBtn   = new QPushButton("Transfer");
+    auto* closeBtn = new QPushButton("Close Account");
     depBtn->setFixedWidth(80);
     wdBtn->setFixedWidth(80);
     xfrBtn->setFixedWidth(80);
-    connect(depBtn,  &QPushButton::clicked, this, &MainWindow::onDeposit);
-    connect(wdBtn,   &QPushButton::clicked, this, &MainWindow::onWithdraw);
-    connect(xfrBtn,  &QPushButton::clicked, this, &MainWindow::onTransfer);
+    closeBtn->setFixedWidth(120);
+    closeBtn->setStyleSheet(
+        "QPushButton{background:#fff3f3;border-color:#e6b1b1;color:#c0392b;}"
+        "QPushButton:hover{background:#ffe5e5;border-color:#c0392b;}");
+    connect(depBtn,   &QPushButton::clicked, this, &MainWindow::onDeposit);
+    connect(wdBtn,    &QPushButton::clicked, this, &MainWindow::onWithdraw);
+    connect(xfrBtn,   &QPushButton::clicked, this, &MainWindow::onTransfer);
+    connect(closeBtn, &QPushButton::clicked, this, &MainWindow::onCloseAccount);
 
     auto makeRow = [](QWidget* widget, QPushButton* btn) {
         auto* row = new QHBoxLayout;
@@ -146,15 +224,42 @@ QWidget* MainWindow::buildAccountsTab() {
     auto* xfrWidget = new QWidget;
     xfrWidget->setLayout(xfrRow);
 
-    opsForm->addRow("Account:", m_selAccount);
+    auto* selRow = new QHBoxLayout;
+    selRow->addWidget(m_selAccount, 1);
+    selRow->addWidget(closeBtn);
+    auto* selWidget = new QWidget;
+    selWidget->setLayout(selRow);
+
+    opsForm->addRow("Account:", selWidget);
     opsForm->addRow("Deposit:",  makeRow(m_depositAmt,  depBtn));
     opsForm->addRow("Withdraw:", makeRow(m_withdrawAmt, wdBtn));
     opsForm->addRow("Transfer:", xfrWidget);
 
-    root->addWidget(m_accountsTable, 2);
-    root->addWidget(refreshBtn, 0, Qt::AlignRight);
-    root->addWidget(createBox);
-    root->addWidget(opsBox);
+    // Exchange rates panel — full-height column on the right side
+    auto* ratesBox = new QGroupBox("Live Exchange Rates");
+    auto* ratesLayout = new QVBoxLayout(ratesBox);
+    m_ratesTable = makeTable({"Pair", "Rate", "Change"});
+    m_ratesTable->setMinimumHeight(220);
+    ratesLayout->addWidget(m_ratesTable);
+
+    // Left column: accounts table + refresh + create + operations
+    auto* leftCol = new QVBoxLayout;
+    leftCol->setSpacing(8);
+    m_accountsTable->setMinimumHeight(180);
+    leftCol->addWidget(m_accountsTable, 1);
+    leftCol->addWidget(refreshBtn, 0, Qt::AlignRight);
+    leftCol->addWidget(createBox);
+    leftCol->addWidget(opsBox);
+    auto* leftWidget = new QWidget;
+    leftWidget->setLayout(leftCol);
+
+    // Two-column layout: accounts/ops on the left, rates on the right
+    auto* split = new QHBoxLayout;
+    split->setSpacing(10);
+    split->addWidget(leftWidget, 3);
+    split->addWidget(ratesBox,   2);
+
+    root->addLayout(split);
 
     return w;
 }
@@ -164,8 +269,8 @@ QWidget* MainWindow::buildMarketTab() {
     auto* root = new QVBoxLayout(w);
     root->setSpacing(8);
 
-    m_quotesTable = makeTable({"Ticker", "Price (USD)"});
-    m_quotesTable->setFixedHeight(220);
+    m_quotesTable = makeTable({"Ticker", "Price (USD)", "Change"});
+    m_quotesTable->setFixedHeight(260);
 
     auto* tradeBox = new QGroupBox("Place Order");
     auto* form = new QFormLayout(tradeBox);
@@ -220,13 +325,23 @@ QWidget* MainWindow::buildPortfolioTab() {
     auto* root = new QVBoxLayout(w);
     root->setSpacing(8);
 
+    auto* posLbl = new QLabel("<b>Open Positions</b>");
     m_portfolioTable = makeTable({"Ticker", "Qty", "Avg Price", "Current", "P&L"});
 
-    auto* refreshBtn = new QPushButton("Refresh Portfolio");
-    refreshBtn->setFixedWidth(130);
-    connect(refreshBtn, &QPushButton::clicked, this, &MainWindow::refreshPortfolio);
+    auto* trdLbl = new QLabel("<b>Trade Log</b>");
+    m_tradesTable = makeTable({"Timestamp", "Ticker", "Side", "Qty", "Price"});
 
+    auto* refreshBtn = new QPushButton("Refresh");
+    refreshBtn->setFixedWidth(100);
+    connect(refreshBtn, &QPushButton::clicked, this, [this]() {
+        refreshPortfolio();
+        refreshTrades();
+    });
+
+    root->addWidget(posLbl);
     root->addWidget(m_portfolioTable, 1);
+    root->addWidget(trdLbl);
+    root->addWidget(m_tradesTable, 1);
     root->addWidget(refreshBtn, 0, Qt::AlignRight);
 
     return w;
@@ -272,19 +387,35 @@ void MainWindow::refreshAccounts() {
     }
 
     m_accounts = resp["accounts"].toArray();
-    m_accountsTable->setRowCount(m_accounts.size());
+    m_accountsTable->setSortingEnabled(false);
 
-    for (int i = 0; i < m_accounts.size(); ++i) {
-        auto a = m_accounts[i].toObject();
-        auto currency = a["currency"].toString();
-        m_accountsTable->setItem(i, 0, new QTableWidgetItem(
-            QString::number(a["id"].toInteger())));
-        m_accountsTable->setItem(i, 1, new QTableWidgetItem(currency));
-        m_accountsTable->setItem(i, 2, new QTableWidgetItem(
-            fmtBalance(a["balance"].toDouble(), currency)));
+    if (m_accounts.isEmpty()) {
+        // Empty-state row spanning full width
+        m_accountsTable->setRowCount(1);
+        auto* hint = new QTableWidgetItem(
+            "No accounts yet. Use \"New Account\" below to create one.");
+        hint->setTextAlignment(Qt::AlignCenter);
+        hint->setForeground(QColor("#7f8c8d"));
+        QFont f = hint->font(); f.setItalic(true); hint->setFont(f);
+        m_accountsTable->setItem(0, 0, hint);
+        m_accountsTable->setSpan(0, 0, 1, m_accountsTable->columnCount());
+    } else {
+        m_accountsTable->clearSpans();
+        m_accountsTable->setRowCount(m_accounts.size());
+        for (int i = 0; i < m_accounts.size(); ++i) {
+            auto a = m_accounts[i].toObject();
+            auto currency = a["currency"].toString();
+            m_accountsTable->setItem(i, 0, new QTableWidgetItem(
+                QString::number(a["id"].toInteger())));
+            m_accountsTable->setItem(i, 1, new QTableWidgetItem(currency));
+            m_accountsTable->setItem(i, 2, new QTableWidgetItem(
+                fmtBalance(a["balance"].toDouble(), currency)));
+        }
     }
+    m_accountsTable->setSortingEnabled(true);
 
     repopulateAccountCombos();
+    updateStatsHeader();
 }
 
 void MainWindow::refreshQuotes() {
@@ -292,14 +423,46 @@ void MainWindow::refreshQuotes() {
     if (resp["status"].toString() != "ok") return;
 
     auto quotes = resp["quotes"].toArray();
+    m_quotesTable->setSortingEnabled(false);  // suspend sorting during update
     m_quotesTable->setRowCount(quotes.size());
 
     for (int i = 0; i < quotes.size(); ++i) {
         auto q = quotes[i].toObject();
-        m_quotesTable->setItem(i, 0, new QTableWidgetItem(q["ticker"].toString()));
-        m_quotesTable->setItem(i, 1, new QTableWidgetItem(
-            QString("$%1").arg(q["price"].toDouble(), 0, 'f', 2)));
+        QString ticker = q["ticker"].toString();
+        double  price  = q["price"].toDouble();
+
+        // Compare to last seen price for ▲/▼ indicator
+        double prev   = m_lastQuotes.value(ticker, price);
+        double delta  = price - prev;
+        double pct    = prev > 0.0 ? (delta / prev) * 100.0 : 0.0;
+        m_lastQuotes[ticker] = price;
+
+        m_quotesTable->setItem(i, 0, new QTableWidgetItem(ticker));
+
+        auto* priceItem = new QTableWidgetItem(
+            QString("$%1").arg(price, 0, 'f', 2));
+        QFont f = priceItem->font(); f.setBold(true); priceItem->setFont(f);
+        m_quotesTable->setItem(i, 1, priceItem);
+
+        QString arrow, deltaStr;
+        QColor color;
+        if (qAbs(delta) < 1e-9) {
+            arrow = "—"; deltaStr = "0.00%"; color = QColor("#7f8c8d");
+        } else if (delta > 0) {
+            arrow = "▲";
+            deltaStr = QString("+%1%").arg(pct, 0, 'f', 2);
+            color = QColor("#27ae60");
+        } else {
+            arrow = "▼";
+            deltaStr = QString("%1%").arg(pct, 0, 'f', 2);
+            color = QColor("#c0392b");
+        }
+        auto* changeItem = new QTableWidgetItem(QString("%1  %2").arg(arrow, deltaStr));
+        changeItem->setForeground(color);
+        QFont cf = changeItem->font(); cf.setBold(true); changeItem->setFont(cf);
+        m_quotesTable->setItem(i, 2, changeItem);
     }
+    m_quotesTable->setSortingEnabled(true);
 }
 
 void MainWindow::refreshPortfolio() {
@@ -307,6 +470,7 @@ void MainWindow::refreshPortfolio() {
     if (resp["status"].toString() != "ok") return;
 
     auto positions = resp["positions"].toArray();
+    m_portfolioTable->setSortingEnabled(false);
     m_portfolioTable->setRowCount(positions.size());
 
     for (int i = 0; i < positions.size(); ++i) {
@@ -332,6 +496,8 @@ void MainWindow::refreshPortfolio() {
         pnlItem->setFont(font);
         m_portfolioTable->setItem(i, 4, pnlItem);
     }
+    m_portfolioTable->setSortingEnabled(true);
+    updateStatsHeader();
 }
 
 void MainWindow::refreshHistory() {
@@ -342,26 +508,154 @@ void MainWindow::refreshHistory() {
     if (resp["status"].toString() != "ok") return;
 
     auto history = resp["history"].toArray();
+    m_historyTable->setSortingEnabled(false);
     m_historyTable->setRowCount(history.size());
 
     for (int i = 0; i < history.size(); ++i) {
         auto e = history[i].toObject();
         qint64 ts = e["timestamp"].toInteger();
         double amount = e["amount"].toDouble();
-        bool   income = (amount >= 0.0);
+        QString op = e["op_type"].toString();
+
+        // Server always returns positive amount; income/expense is encoded
+        // by op_type: deposit/transfer_in/sell_stock = income, others = expense.
+        const bool income = (op == "deposit" || op == "transfer_in" || op == "sell_stock");
 
         auto* tsItem = new QTableWidgetItem(
             QDateTime::fromSecsSinceEpoch(ts).toString("yyyy-MM-dd  hh:mm:ss"));
         auto* amtItem = new QTableWidgetItem(
-            QString("%1%2").arg(income ? "+" : "").arg(amount, 0, 'f', 2));
+            QString("%1%2").arg(income ? "+" : "−").arg(amount, 0, 'f', 2));
         amtItem->setForeground(income ? QColor("#27ae60") : QColor("#e74c3c"));
 
         m_historyTable->setItem(i, 0, tsItem);
-        m_historyTable->setItem(i, 1, new QTableWidgetItem(e["op_type"].toString()));
+        m_historyTable->setItem(i, 1, new QTableWidgetItem(op));
         m_historyTable->setItem(i, 2, amtItem);
         m_historyTable->setItem(i, 3, new QTableWidgetItem(
             QString::number(e["balance_after"].toDouble(), 'f', 2)));
     }
+    m_historyTable->setSortingEnabled(true);
+}
+
+void MainWindow::updateStatsHeader() {
+    // Cash totals per currency
+    QMap<QString, double> totals;
+    for (const auto& v : m_accounts) {
+        auto a = v.toObject();
+        totals[a["currency"].toString()] += a["balance"].toDouble();
+    }
+
+    QStringList parts;
+    auto fmt = [](double x) { return QString::number(x, 'f', 2); };
+    if (totals.contains("USD")) parts << QString("$%1").arg(fmt(totals["USD"]));
+    if (totals.contains("EUR")) parts << QString("€%1").arg(fmt(totals["EUR"]));
+    if (totals.contains("RUB")) parts << QString("₽%1").arg(fmt(totals["RUB"]));
+    m_statsCash->setText(parts.isEmpty() ? "no accounts yet"
+                                         : parts.join("   ·   "));
+
+    // Portfolio market value + unrealized P&L (we'll fetch lazily, but if we
+    // already have a portfolio table populated, sum from there).
+    auto resp = api({{"type", "get_portfolio"}});
+    if (resp["status"].toString() == "ok") {
+        auto positions = resp["positions"].toArray();
+        double mv = 0.0, pnl = 0.0;
+        for (const auto& p : positions) {
+            auto o = p.toObject();
+            mv  += o["quantity"].toInt() * o["current_price"].toDouble();
+            pnl += o["pnl"].toDouble();
+        }
+        m_statsPortfolio->setText(positions.isEmpty()
+            ? QString("—")
+            : QString("$%1").arg(QString::number(mv, 'f', 2)));
+
+        if (positions.isEmpty()) {
+            m_statsPnL->setText("—");
+            m_statsPnL->setStyleSheet("font-weight:700;font-size:14pt;color:#ffffff;");
+        } else {
+            QString text = QString("%1$%2").arg(pnl >= 0 ? "+" : "−")
+                                            .arg(qAbs(pnl), 0, 'f', 2);
+            m_statsPnL->setText(text);
+            m_statsPnL->setStyleSheet(
+                QString("font-weight:700;font-size:14pt;color:%1;")
+                    .arg(pnl >= 0 ? "#2ecc71" : "#e74c3c"));
+        }
+    }
+}
+
+void MainWindow::refreshExchangeRates() {
+    auto resp = api({{"type", "get_exchange_rates"}});
+    if (resp["status"].toString() != "ok") return;
+
+    auto rates = resp["rates"].toObject();
+    m_ratesTable->setSortingEnabled(false);
+    m_ratesTable->setRowCount(rates.size());
+
+    int row = 0;
+    auto keys = rates.keys();
+    std::sort(keys.begin(), keys.end());
+    for (const auto& pair : keys) {
+        double  rate = rates[pair].toDouble();
+        double  prev = m_lastRates.value(pair, rate);
+        double  delta = rate - prev;
+        double  pct = prev > 0.0 ? (delta / prev) * 100.0 : 0.0;
+        m_lastRates[pair] = rate;
+
+        QString readable = pair;
+        readable.replace('_', " → ");
+        m_ratesTable->setItem(row, 0, new QTableWidgetItem(readable));
+        m_ratesTable->setItem(row, 1, new QTableWidgetItem(
+            QString::number(rate, 'f', 4)));
+
+        QString arrow, deltaStr;
+        QColor color;
+        if (qAbs(delta) < 1e-9) {
+            arrow = "—"; deltaStr = "0.00%"; color = QColor("#7f8c8d");
+        } else if (delta > 0) {
+            arrow = "▲";
+            deltaStr = QString("+%1%").arg(pct, 0, 'f', 3);
+            color = QColor("#27ae60");
+        } else {
+            arrow = "▼";
+            deltaStr = QString("%1%").arg(pct, 0, 'f', 3);
+            color = QColor("#c0392b");
+        }
+        auto* changeItem = new QTableWidgetItem(QString("%1  %2").arg(arrow, deltaStr));
+        changeItem->setForeground(color);
+        QFont cf = changeItem->font(); cf.setBold(true); changeItem->setFont(cf);
+        m_ratesTable->setItem(row, 2, changeItem);
+        ++row;
+    }
+    m_ratesTable->setSortingEnabled(true);
+}
+
+void MainWindow::refreshTrades() {
+    auto resp = api({{"type", "get_trades"}});
+    if (resp["status"].toString() != "ok") return;
+
+    auto trades = resp["trades"].toArray();
+    m_tradesTable->setSortingEnabled(false);
+    m_tradesTable->setRowCount(trades.size());
+
+    for (int i = 0; i < trades.size(); ++i) {
+        auto t = trades[i].toObject();
+        qint64 ts   = t["timestamp"].toInteger();
+        QString side = t["side"].toString();
+        bool isBuy   = (side == "buy");
+
+        m_tradesTable->setItem(i, 0, new QTableWidgetItem(
+            QDateTime::fromSecsSinceEpoch(ts).toString("yyyy-MM-dd  hh:mm:ss")));
+        m_tradesTable->setItem(i, 1, new QTableWidgetItem(t["ticker"].toString()));
+
+        auto* sideItem = new QTableWidgetItem(side.toUpper());
+        sideItem->setForeground(isBuy ? QColor("#27ae60") : QColor("#c0392b"));
+        QFont f = sideItem->font(); f.setBold(true); sideItem->setFont(f);
+        m_tradesTable->setItem(i, 2, sideItem);
+
+        m_tradesTable->setItem(i, 3, new QTableWidgetItem(
+            QString::number(t["quantity"].toInt())));
+        m_tradesTable->setItem(i, 4, new QTableWidgetItem(
+            QString("$%1").arg(t["price"].toDouble(), 0, 'f', 2)));
+    }
+    m_tradesTable->setSortingEnabled(true);
 }
 
 void MainWindow::repopulateAccountCombos() {
@@ -390,23 +684,51 @@ void MainWindow::repopulateAccountCombos() {
 // ─── slots ───────────────────────────────────────────────────────────────────
 
 void MainWindow::onTabChanged(int idx) {
-    // Auto-refresh quotes only while the Market tab is visible — saves I/O
-    // and avoids racing the timer against operations on other tabs.
-    if (idx == 1) m_timer->start(); else m_timer->stop();
+    m_currentTab = idx;
+    // Timer is always running so the stats header (cash / portfolio / P&L)
+    // stays live regardless of the selected tab. Per-tab data is refreshed
+    // inside onTimerTick() based on which tab is visible.
+    m_timer->start();
 
     switch (idx) {
-        case 0: refreshAccounts();  break;
-        case 1: refreshQuotes();    break;
-        case 2: refreshPortfolio(); break;
-        case 3: refreshHistory();   break;
+        case 0:
+            refreshAccounts();
+            refreshExchangeRates();
+            break;
+        case 1:
+            refreshQuotes();
+            break;
+        case 2:
+            refreshPortfolio();
+            refreshTrades();
+            break;
+        case 3:
+            refreshHistory();
+            break;
     }
 }
 
 void MainWindow::onTimerTick() {
-    refreshQuotes();
+    // Stats header (cash / portfolio / P&L) always refreshes — independent of tab.
+    if (m_currentTab == 0) {
+        refreshExchangeRates();   // FX rates jitter ±0.5% per server tick
+        updateStatsHeader();
+    } else if (m_currentTab == 1) {
+        refreshQuotes();          // stock prices
+        updateStatsHeader();      // unrealized P&L moves with quote prices
+    } else if (m_currentTab == 2) {
+        refreshPortfolio();       // already calls updateStatsHeader internally
+    } else {
+        updateStatsHeader();      // History tab: at least keep the header live
+    }
 }
 
 void MainWindow::onLogout() {
+    auto answer = QMessageBox::question(this, "Logout",
+        "Disconnect and exit?",
+        QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+    if (answer != QMessageBox::Yes) return;
+
     m_timer->stop();
     api({{"type", "logout"}});
     m_client->disconnectFromServer();
@@ -423,6 +745,25 @@ void MainWindow::onCreateAccount() {
         refreshAccounts();
     } else {
         QMessageBox::warning(this, "Error", resp["message"].toString());
+    }
+}
+
+void MainWindow::onCloseAccount() {
+    qint64 id = m_selAccount->currentData().toLongLong();
+    if (id == 0) return;
+
+    auto answer = QMessageBox::question(this, "Close Account",
+        QString("Close account %1?\n\nThe account must have zero balance and "
+                "no open stock positions.").arg(id),
+        QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+    if (answer != QMessageBox::Yes) return;
+
+    auto resp = api({{"type", "close_account"}, {"account_id", id}});
+    if (resp["status"].toString() == "ok") {
+        status(QString("Closed account %1").arg(id));
+        refreshAccounts();
+    } else {
+        QMessageBox::warning(this, "Cannot Close", resp["message"].toString());
     }
 }
 

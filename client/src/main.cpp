@@ -1,4 +1,5 @@
 #include <QApplication>
+#include <QPalette>
 #include <QStyleFactory>
 #include "TcpClient.hpp"
 #include "LoginWindow.hpp"
@@ -90,7 +91,14 @@ QStatusBar {
     border-top: 1px solid #d0d4db;
     color: #2c3e50;
 }
-QLabel { color: #2c3e50; }
+QLabel { color: #2c3e50; background: transparent; }
+QGroupBox QLabel { color: #2c3e50; }
+QFormLayout QLabel { color: #2c3e50; }
+* { color: #2c3e50; }
+QHeaderView::section { color: #ffffff; }
+QPushButton { color: #2c3e50; }
+QTabBar::tab { color: #4a5566; }
+QTabBar::tab:selected { color: #1f2937; }
 )qss";
 
 }  // namespace
@@ -102,6 +110,22 @@ int main(int argc, char* argv[]) {
 
     if (QStyleFactory::keys().contains("Fusion"))
         app.setStyle("Fusion");
+
+    // Force a light palette so text is readable regardless of the system theme.
+    QPalette p;
+    p.setColor(QPalette::Window,          QColor("#f5f6f8"));
+    p.setColor(QPalette::WindowText,      QColor("#2c3e50"));
+    p.setColor(QPalette::Base,            QColor("#ffffff"));
+    p.setColor(QPalette::AlternateBase,   QColor("#fafbfc"));
+    p.setColor(QPalette::Text,            QColor("#2c3e50"));
+    p.setColor(QPalette::Button,          QColor("#ffffff"));
+    p.setColor(QPalette::ButtonText,      QColor("#2c3e50"));
+    p.setColor(QPalette::ToolTipBase,     QColor("#ffffff"));
+    p.setColor(QPalette::ToolTipText,     QColor("#2c3e50"));
+    p.setColor(QPalette::Highlight,       QColor("#2980b9"));
+    p.setColor(QPalette::HighlightedText, QColor("#ffffff"));
+    p.setColor(QPalette::PlaceholderText, QColor("#9ba3ad"));
+    app.setPalette(p);
     app.setStyleSheet(QString::fromUtf8(kStyleSheet));
 
     TcpClient client;

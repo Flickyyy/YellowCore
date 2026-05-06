@@ -8,6 +8,7 @@
 #include <QLabel>
 #include <QTimer>
 #include <QJsonArray>
+#include <QMap>
 #include "TcpClient.hpp"
 
 class MainWindow : public QMainWindow {
@@ -25,6 +26,7 @@ private slots:
 
     // Accounts tab
     void onCreateAccount();
+    void onCloseAccount();
     void onDeposit();
     void onWithdraw();
     void onTransfer();
@@ -43,6 +45,17 @@ private:
     QTimer*    m_timer;
 
     QJsonArray m_accounts; // cached after each refresh
+    int m_currentTab = 0;
+
+    // Stats header (top of window)
+    QLabel* m_statsCash;       // multi-currency cash totals
+    QLabel* m_statsPortfolio;  // portfolio market value (USD)
+    QLabel* m_statsPnL;        // total unrealized P&L (USD)
+
+    // Quote-change tracking (ticker → last seen price)
+    QMap<QString, double> m_lastQuotes;
+    // FX-rate change tracking (pair → last seen rate)
+    QMap<QString, double> m_lastRates;
 
     // ---- Accounts tab ----
     QWidget*       buildAccountsTab();
@@ -53,6 +66,7 @@ private:
     QDoubleSpinBox* m_withdrawAmt;
     QComboBox*     m_transferToCombo;
     QDoubleSpinBox* m_transferAmt;
+    QTableWidget*  m_ratesTable;       // exchange rates
 
     // ---- Market tab ----
     QWidget*      buildMarketTab();
@@ -64,6 +78,7 @@ private:
     // ---- Portfolio tab ----
     QWidget*      buildPortfolioTab();
     QTableWidget* m_portfolioTable;
+    QTableWidget* m_tradesTable;       // executed trades log
 
     // ---- History tab ----
     QWidget*      buildHistoryTab();
@@ -76,6 +91,9 @@ private:
     void refreshQuotes();
     void refreshPortfolio();
     void refreshHistory();
+    void refreshExchangeRates();
+    void refreshTrades();
+    void updateStatsHeader();
     void repopulateAccountCombos();
     void status(const QString& msg);
     static QString fmtBalance(double v, const QString& currency);
