@@ -33,3 +33,4 @@ find_package(Boost REQUIRED COMPONENTS system)
 enable_testing()
 
 add_subdirectory(server)
+add_subdirectory(client)
