@@ -10,6 +10,7 @@ find_package(Qt6 COMPONENTS Core Widgets Network REQUIRED)
 add_executable(yellowcore_client
     src/main.cpp
     src/TcpClient.cpp
+    src/NetworkWorker.cpp
     src/LoginWindow.cpp
     src/MainWindow.cpp
 )

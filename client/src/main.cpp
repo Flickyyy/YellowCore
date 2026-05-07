@@ -61,10 +61,26 @@ QTableWidget {
 QHeaderView::section {
     background: #2c3e50;
     color: #ffffff;
-    padding: 6px 8px;
+    padding: 6px 10px;
     border: none;
+    border-right: 1px solid #34495e;
     font-weight: 600;
 }
+QHeaderView::section:hover {
+    background: #34495e;
+}
+QTableWidget::item:selected {
+    background: #d6e8f5;
+    color: #1f2937;
+}
+QScrollBar:vertical {
+    background: #f5f6f8; width: 10px; margin: 0;
+}
+QScrollBar::handle:vertical {
+    background: #c8cdd4; border-radius: 4px; min-height: 20px;
+}
+QScrollBar::handle:vertical:hover { background: #2980b9; }
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
 QPushButton {
     background: #ffffff;
     border: 1px solid #c8cdd4;

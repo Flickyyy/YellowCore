@@ -8,6 +8,7 @@ endif()
 add_executable(yellowcore_client_tests
     test_tcpclient.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/TcpClient.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/NetworkWorker.cpp
 )
 
 target_include_directories(yellowcore_client_tests PRIVATE
